@@ -3,6 +3,7 @@
  * @brief Definitions for wlgrab capture.
  */
 // standard includes
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <cstring>
@@ -284,6 +285,22 @@ namespace wl {
     return now;
   }
 
+  // Event-driven captures are limited by a token bucket (stream fps per second, burst of 2).
+  // A fixed minimum gap between captures would reject frames of a game that runs at the stream's
+  // rate, because the faster output commits those frames a few ms early or late.
+  static bool take_capture_token(double &tokens, std::optional<std::chrono::steady_clock::time_point> &last, std::chrono::steady_clock::time_point t, std::chrono::nanoseconds delay) {
+    constexpr double burst = 2.0;
+    if (last) {
+      tokens = std::min(burst, tokens + std::chrono::duration<double>(t - *last).count() / std::chrono::duration<double>(delay).count());
+    }
+    last = t;
+    if (tokens < 1.0) {
+      return false;
+    }
+    tokens -= 1.0;
+    return true;
+  }
+
   screencopy_request_e next_screencopy_request(bool pending, bool requested_cursor, bool cursor, bool event_driven, bool have_frame) {
     using enum screencopy_request_e;
     if (pending) {
@@ -478,18 +495,31 @@ namespace wl {
         requested_cursor = cursor;
         dmabuf.listen(interface.screencopy_manager, interface.dmabuf_interface, &interface.supported_modifiers, interface.shm_interface, output, cursor, encoder_modifiers, prefer_linear_capture);
       }
-      do {
-        auto remaining_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(to - std::chrono::steady_clock::now());
-        if (remaining_time_ms.count() < 0 || !display.dispatch(remaining_time_ms)) {
-          return platf::capture_e::timeout;
+      frame_t *current_frame = nullptr;
+      while (true) {
+        do {
+          auto remaining_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(to - std::chrono::steady_clock::now());
+          if (remaining_time_ms.count() < 0 || !display.dispatch(remaining_time_ms)) {
+            return platf::capture_e::timeout;
+          }
+        } while (dmabuf.status == dmabuf_t::WAITING);
+
+        current_frame = dmabuf.current_frame;
+
+        auto frame_time = damage_frame_time(current_frame->frame_timestamp, std::chrono::steady_clock::now(), delay);
+        if (event_driven && have_frame && dmabuf.status == dmabuf_t::READY && !take_capture_token(capture_tokens, last_token_time, frame_time, delay)) {
+          dmabuf.with_damage = true;
+          requested_cursor = cursor;
+          dmabuf.listen(interface.screencopy_manager, interface.dmabuf_interface, &interface.supported_modifiers, interface.shm_interface, output, cursor, encoder_modifiers, prefer_linear_capture);
+          continue;
         }
-      } while (dmabuf.status == dmabuf_t::WAITING);
-
-      auto current_frame = dmabuf.current_frame;
-
-      auto frame_time = damage_frame_time(current_frame->frame_timestamp, std::chrono::steady_clock::now(), delay);
-      next_request = next_damage_request(next_request, frame_time, delay);
-      have_frame = true;
+        if (event_driven && !have_frame) {
+          take_capture_token(capture_tokens, last_token_time, frame_time, delay);
+        }
+        next_request = next_damage_request(next_request, frame_time, delay);
+        have_frame = true;
+        break;
+      }
 
       if (
         dmabuf.status == dmabuf_t::REINIT ||
@@ -527,9 +557,6 @@ namespace wl {
         return;
       }
 
-      if (should_wait_for_damage_request(next_request, std::chrono::steady_clock::now(), delay)) {
-        std::this_thread::sleep_until(next_request);
-      }
     }
 
     /**
@@ -590,6 +617,8 @@ namespace wl {
     std::chrono::steady_clock::time_point next_request {};  ///< Earliest time the next frame may be asked for when event-driven.
     bool event_driven {false};  ///< Whether frames are requested with copy_with_damage.
     bool have_frame {false};  ///< Whether this capture has delivered a frame yet.
+    double capture_tokens {2.0};  ///< Event-driven frames that may still be taken now.
+    std::optional<std::chrono::steady_clock::time_point> last_token_time;  ///< Frame time of the last token update.
     bool requested_cursor {false};  ///< Cursor setting the last screencopy request was made with.
 
     wl::display_t display;  ///< Wayland display connection used for capture.
