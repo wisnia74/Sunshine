@@ -7,6 +7,13 @@ cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 commit=$(git rev-parse HEAD)
 echo "Building $version from $commit ($(git log -1 --format=%s))"
 
+# The libvirtualhid submodule points at LizardByte's repository, so the homelab's
+# change to it lives in this patch. Docker copies the working tree, so the patch
+# goes into the tree for the build and comes out again when the script exits.
+lvh_patch="$PWD/scripts/homelab-libvirtualhid.patch"
+git -C third-party/libvirtualhid apply "$lvh_patch"
+trap 'git -C third-party/libvirtualhid apply -R "$lvh_patch"' EXIT
+
 docker build -f docker/debian.dockerfile --target sunshine \
   --build-arg BASE=ubuntu --build-arg TAG=26.04 \
   --build-arg BRANCH="$(git branch --show-current)" --build-arg COMMIT="$commit" \

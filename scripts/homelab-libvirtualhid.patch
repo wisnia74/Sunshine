@@ -1,0 +1,70 @@
+diff --git a/src/platform/linux/uhid_backend.cpp b/src/platform/linux/uhid_backend.cpp
+index bf58868..8aeebec 100644
+--- a/src/platform/linux/uhid_backend.cpp
++++ b/src/platform/linux/uhid_backend.cpp
+@@ -372,7 +372,11 @@ namespace lvh::detail {
+     bool uses_sparse_uinput_button_slots(GamepadProfileKind kind) {
+       using enum GamepadProfileKind;
+ 
+-      return kind == xbox_360 || kind == xbox_one || kind == xbox_series;
++      // The Xbox 360 profile keeps the shape of a wired pad on the xpad driver:
++      // USB bus and dense button codes. Games that number buttons in code order,
++      // such as Unity games that use Rewired, expect that layout. On the sparse
++      // layout they read X as Y.
++      return kind == xbox_one || kind == xbox_series;
+     }
+ 
+     std::uint16_t to_uhid_bus(BusType bus_type) {
+@@ -1531,10 +1535,9 @@ namespace lvh::detail {
+       }
+ 
+       libevdev_set_name(device.get(), profile.name.c_str());
+-      const auto xbox_360 = profile.gamepad_kind == GamepadProfileKind::xbox_360;
+       const auto xbox_one = profile.gamepad_kind == GamepadProfileKind::xbox_one;
+       const auto xbox_series = profile.gamepad_kind == GamepadProfileKind::xbox_series;
+-      const auto uses_sparse_xbox_mapping = xbox_360 || xbox_one || xbox_series;
++      const auto uses_sparse_xbox_mapping = uses_sparse_uinput_button_slots(profile.gamepad_kind);
+       auto vendor_id = profile.vendor_id;
+       auto product_id = profile.product_id;
+       if (xbox_one) {
+diff --git a/tests/unit/test_linux_backend.cpp b/tests/unit/test_linux_backend.cpp
+index 93f0d86..e34b442 100644
+--- a/tests/unit/test_linux_backend.cpp
++++ b/tests/unit/test_linux_backend.cpp
+@@ -1287,7 +1287,7 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
+ 
+   constexpr std::array gamepad_cases {
+     GamepadCase {generic, BUS_USB, 0x1209, 0x0001, true, false},
+-    GamepadCase {xbox_360, BUS_BLUETOOTH, 0x045E, 0x028E, false, true},
++    GamepadCase {xbox_360, BUS_USB, 0x045E, 0x028E, false, false},
+     GamepadCase {xbox_one, BUS_BLUETOOTH, 0x045E, 0x0B20, false, true},
+     GamepadCase {xbox_series, BUS_BLUETOOTH, 0x045E, 0x0B13, true, true},
+   };
+@@ -1358,14 +1358,10 @@ TEST_F(LinuxBackendTest, FakeUinputConstructionCoversCapabilitiesAndFailureBranc
+   constexpr std::array expected_xbox_360_button_slots {
+     BTN_SOUTH,
+     BTN_EAST,
+-    BTN_C,
+     BTN_NORTH,
+     BTN_WEST,
+-    BTN_Z,
+     BTN_TL,
+     BTN_TR,
+-    BTN_TL2,
+-    BTN_TR2,
+     BTN_SELECT,
+     BTN_START,
+     BTN_MODE,
+diff --git a/tests/unit/test_linux_consumers.cpp b/tests/unit/test_linux_consumers.cpp
+index d11ba7d..c298625 100644
+--- a/tests/unit/test_linux_consumers.cpp
++++ b/tests/unit/test_linux_consumers.cpp
+@@ -1087,7 +1087,7 @@ TEST_F(LinuxConsumerTest, SdlSeesXbox360CanonicalButtons) {
+     .profile = lvh::profiles::xbox_360(),
+     .name_suffix = "SDL Xbox 360",
+     .stable_id = "libvirtualhid-sdl-xbox-360-test",
+-    .minimum_buttons = 15,
++    .minimum_buttons = 11,
+     .minimum_axes = 6,
+   });
+ }
