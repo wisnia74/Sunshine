@@ -2419,6 +2419,41 @@ namespace video {
     return nullptr;
   }
 
+  std::chrono::steady_clock::duration repeat_wait(const repeat_timing_t &timing) {
+    using duration = std::chrono::steady_clock::duration;
+    const auto until = [&timing](std::chrono::steady_clock::time_point at) {
+      return std::max<duration>(at - timing.now, duration::zero());
+    };
+
+    // A repeat that enters the encoder here holds the stream at the minimum frame rate.
+    const auto cadence = timing.frame_start + timing.max_frametime;
+
+    if (timing.repeat_in_budget) {
+      // One long interval is a hitch in a fast app, whose next frame comes at the short interval again.
+      const auto earliest_capture = timing.last_capture + timing.shortest_capture_interval;
+      const duration margin = std::chrono::microseconds(500);
+      const auto latest_start = earliest_capture - timing.encode_time - margin;
+      if (latest_start >= timing.now) {
+        return until(std::min(cadence, latest_start));
+      }
+
+      // An app that is two of its frame times late has stopped, so no captured frame is due. A longer
+      // interval counts as two frame times of the minimum rate, because a slow app stops just as suddenly.
+      const auto pace = std::min<duration>(timing.capture_interval, 2 * timing.max_frametime);
+      if (timing.now >= timing.last_capture + 2 * pace) {
+        return until(cadence);
+      }
+    }
+
+    // A repeat started max_frametime from now would still be in the encoder when the app's next frame comes.
+    const auto next_capture = timing.last_capture + timing.capture_interval;
+    if (next_capture > timing.now && next_capture < timing.now + timing.max_frametime + timing.encode_time) {
+      return until(next_capture + timing.max_frametime);
+    }
+
+    return timing.max_frametime;
+  }
+
   /**
    * @brief Run one encode loop for a display capture stream.
    *
@@ -2475,6 +2510,19 @@ namespace video {
     auto idr_events = mail->event<bool>(mail::idr);
     auto invalidate_ref_frames_events = mail->event<std::pair<int64_t, int64_t>>(mail::invalidate_ref_frames);
 
+    repeat_timing_t timing {};
+    timing.max_frametime = std::chrono::duration_cast<std::chrono::steady_clock::duration>(max_frametime);
+    timing.frame_start = std::chrono::steady_clock::now();
+    timing.last_capture = timing.frame_start;
+    timing.capture_interval = timing.max_frametime;
+    timing.shortest_capture_interval = timing.max_frametime;
+
+    // Refills at the client's frame rate, and every encoded frame takes one token. A repeat that goes in
+    // early needs a token, because repeats placed between the frames of an app that runs a little faster
+    // than half the client's rate would otherwise push the stream past that rate.
+    double frame_budget = 0.0;
+    auto frame_budget_at = timing.frame_start;
+
     {
       // Load a dummy image into the AVFrame to ensure we have something to encode
       // even if we timeout waiting on the first frame. This is a relatively large
@@ -2508,8 +2556,20 @@ namespace video {
 
       // Encode at a minimum FPS to avoid image quality issues with static content
       if (!requested_idr_frame || images->peek()) {
-        if (auto img = images->pop(max_frametime)) {
+        timing.now = std::chrono::steady_clock::now();
+        frame_budget = std::min(frame_budget + std::chrono::duration<double>(timing.now - frame_budget_at).count() * config.framerate, 2.0);
+        frame_budget_at = timing.now;
+        timing.repeat_in_budget = frame_budget >= 1.0;
+
+        if (auto img = images->pop(repeat_wait(timing))) {
           frame_timestamp = img->frame_timestamp;
+
+          const auto captured = frame_timestamp.value_or(std::chrono::steady_clock::now());
+          const auto interval = std::max(captured - timing.last_capture, std::chrono::steady_clock::duration::zero());
+          timing.shortest_capture_interval = std::min(interval, timing.capture_interval);
+          timing.capture_interval = interval;
+          timing.last_capture = captured;
+
           if (session->convert(*img)) {
             BOOST_LOG(error) << "Could not convert image"sv;
             return;
@@ -2533,10 +2593,13 @@ namespace video {
         break;
       }
 
+      timing.frame_start = std::chrono::steady_clock::now();
       if (encode(frame_nr++, *session, packets, channel_data, frame_timestamp)) {
         BOOST_LOG(error) << "Could not encode video packet"sv;
         return;
       }
+      timing.encode_time = std::chrono::steady_clock::now() - timing.frame_start;
+      frame_budget = std::max(frame_budget - 1.0, -1.0);
 
       session->request_normal_frame();
 

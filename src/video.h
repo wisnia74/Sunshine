@@ -754,6 +754,33 @@ namespace video {
   void record_encoder_probe_results(const encoder_t &encoder);
 
   /**
+   * @brief What the encode loop knows when it decides how long to wait for a captured frame.
+   */
+  struct repeat_timing_t {
+    std::chrono::steady_clock::time_point now;  ///< Time of the decision.
+    std::chrono::steady_clock::time_point frame_start;  ///< When the last frame, captured or repeated, entered the encoder.
+    std::chrono::steady_clock::duration encode_time;  ///< How long the encoder was busy with that frame.
+    std::chrono::steady_clock::time_point last_capture;  ///< Capture time of the last captured frame.
+    std::chrono::steady_clock::duration capture_interval;  ///< Time between the last two captured frames.
+    std::chrono::steady_clock::duration shortest_capture_interval;  ///< The shorter of the last two such intervals.
+    std::chrono::steady_clock::duration max_frametime;  ///< Frame time of the minimum frame rate.
+    bool repeat_in_budget;  ///< Whether one more frame keeps the stream within the client's frame rate.
+  };
+
+  /**
+   * @brief Decide how long the encode loop waits for a captured frame before it encodes the last frame again.
+   * @details The encoder is busy with a repeated frame for as long as with a captured one, and a captured
+   * frame that arrives meanwhile waits for it. A repeat therefore goes in `max_frametime` after the last
+   * frame only when it is finished before the app's next frame is due, or when the app has stopped.
+   * Otherwise the wait is `max_frametime`, and when the app's next frame is due before a repeat started
+   * then would be finished, it ends `max_frametime` after that frame is due.
+   *
+   * @param timing State of the encode loop.
+   * @return Longest wait for a captured frame.
+   */
+  std::chrono::steady_clock::duration repeat_wait(const repeat_timing_t &timing);
+
+  /**
    * @brief Capture and encode video for a streaming session.
    *
    * @param mail Session mail bus.
