@@ -69,6 +69,14 @@ const config = ref(props.config)
       </div>
     </div>
 
+    <!-- Minimum QP -->
+    <div class="mb-3" v-if="platform === 'linux'">
+      <label for="nvenc_min_qp" class="form-label">{{ $t('config.nvenc_min_qp') }}</label>
+      <input type="number" min="0" max="51" class="form-control" id="nvenc_min_qp" placeholder="0"
+             v-model="config.nvenc_min_qp" />
+      <div class="form-text">{{ $t('config.nvenc_min_qp_desc') }}</div>
+    </div>
+
     <!-- Miscellaneous options -->
     <div class="mb-3 accordion">
       <div class="accordion-item">

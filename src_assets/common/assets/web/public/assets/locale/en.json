@@ -348,6 +348,8 @@
     "nvenc_h264_cavlc_desc": "Simpler form of entropy coding. CAVLC needs around 10% more bitrate for same quality. Only relevant for really old decoding devices.",
     "nvenc_latency_over_power": "Prefer lower encoding latency over power savings",
     "nvenc_latency_over_power_desc": "Sunshine requests maximum GPU clock speed while streaming to reduce encoding latency. Disabling it is not recommended since this can lead to significantly increased encoding latency.",
+    "nvenc_min_qp": "Minimum QP",
+    "nvenc_min_qp_desc": "Lowest quantization parameter the encoder may use for H.264 and HEVC. Without it, the encoder spends spare bitrate on refining a picture that holds still, to a quality no keyframe can match, so each keyframe shows as a drop in quality. Setting it switches rate control from CBR to VBR, with the stream's bitrate still the maximum. 0 disables it. Linux only.",
     "nvenc_opengl_vulkan_on_dxgi": "Present OpenGL/Vulkan on top of DXGI",
     "nvenc_opengl_vulkan_on_dxgi_desc": "Sunshine can't capture fullscreen OpenGL and Vulkan programs at full frame rate unless they present on top of DXGI. This is system-wide setting that is reverted on sunshine program exit.",
     "nvenc_preset": "Performance preset",

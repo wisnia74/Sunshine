@@ -95,6 +95,8 @@ namespace config {
       int h264_coder;  ///< Legacy NVENC H.264 entropy-coding mode.
       int spatial_aq;  ///< FFmpeg NVENC spatial adaptive-quantization mode.
       int vbv_percentage_increase;  ///< Legacy NVENC VBV buffer-size percentage increase.
+      int rate_control;  ///< FFmpeg NVENC rate-control mode.
+      int min_qp;  ///< FFmpeg NVENC minimum QP for H.264 and HEVC; -1 leaves it unset.
     } nv_legacy;  ///< Legacy NVIDIA encoder options kept for config compatibility.
 
     struct {

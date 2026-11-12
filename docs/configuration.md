@@ -2555,6 +2555,38 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
     </tr>
 </table>
 
+### nvenc_min_qp
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Minimum quantization parameter (QP) for H.264 and HEVC.
+            On a picture that holds still, the encoder spends its spare bitrate on refining it, to a quality that a
+            keyframe cannot reach within its size limit, so each keyframe shows as a drop in quality. A minimum QP
+            stops the refinement at that level. Setting it switches rate control from CBR to VBR, because FFmpeg
+            applies a minimum QP in VBR mode only. The stream's bitrate remains the maximum. 0 disables it.
+            @note{This option only applies on Linux when using NVENC [encoder](#encoder).}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            0
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Range</td>
+        <td colspan="2">0-51</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            nvenc_min_qp = 20
+            @endcode</td>
+    </tr>
+</table>
+
 ### nvenc_realtime_hags
 
 <table>

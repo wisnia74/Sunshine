@@ -1639,6 +1639,8 @@ namespace config {
 
     int_between_f(vars, "nvenc_preset", video.nv.quality_preset, {1, 7});
     int_between_f(vars, "nvenc_vbv_increase", video.nv.vbv_percentage_increase, {0, 400});
+    int nvenc_min_qp = 0;
+    int_between_f(vars, "nvenc_min_qp", nvenc_min_qp, {0, 51});
     bool_f(vars, "nvenc_spatial_aq", video.nv.adaptive_quantization);
     generic_f(vars, "nvenc_twopass", video.nv.two_pass, nv::twopass_from_view);
     bool_f(vars, "nvenc_h264_cavlc", video.nv.h264_cavlc);
@@ -1655,6 +1657,10 @@ namespace config {
     video.nv_legacy.h264_coder = video.nv.h264_cavlc ? NV_ENC_H264_ENTROPY_CODING_MODE_CAVLC : NV_ENC_H264_ENTROPY_CODING_MODE_CABAC;
     video.nv_legacy.spatial_aq = video.nv.adaptive_quantization;
     video.nv_legacy.vbv_percentage_increase = video.nv.vbv_percentage_increase;
+    // FFmpeg hands a minimum QP to NVENC in VBR mode only, so a minimum QP selects VBR.
+    // The stream's bitrate stays the cap in both modes.
+    video.nv_legacy.rate_control = nvenc_min_qp > 0 ? NV_ENC_PARAMS_RC_VBR : NV_ENC_PARAMS_RC_CBR;
+    video.nv_legacy.min_qp = nvenc_min_qp > 0 ? nvenc_min_qp : -1;
 #endif
 
     int_f(vars, "qsv_preset", video.qsv.qsv_preset, qsv::preset_from_view);
